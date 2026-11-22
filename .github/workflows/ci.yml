@@ -82,3 +82,78 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 7
+  
+  # QA Automation Portion
+  e2e:
+    name: Robot Framework E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Start with trusted pushes/manual runs.
+    # Enable PR execution after validating secret access.
+    if: github.event_name != 'pull_request'
+
+    env:
+     QA_USERNAME: ${{ secrets.QA_USERNAME }}
+     QA_PASSWORD: ${{ secrets.QA_PASSWORD }}
+     QA_DISPLAY_NAME: ${{ vars.QA_DISPLAY_NAME }}
+    
+     VITE_SUPABASE_URL: ${{ secrets.QA_SUPABASE_URL }}
+     VITE_SUPABASE_ANON_KEY: ${{ secrets.QA_SUPABASE_ANON_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Robot Framework dependencies
+        run: python -m pip install -r tests/e2e/requirements.txt
+
+      - name: Start frontend
+        run: |
+          npm run dev -- --host 127.0.0.1 > /tmp/vite.log 2>&1 &
+          echo $! > /tmp/vite.pid
+
+      - name: Wait for frontend
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5173/ > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/vite.log
+          exit 1
+
+      - name: Run D01 login tests
+        run: |
+          mkdir -p tests/e2e/results
+          python -m robot \
+            --variablefile tests/e2e/ci_variables.py \
+            --outputdir tests/e2e/results \
+            tests/e2e/suites/D01_login.robot
+
+      - name: Upload Robot test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: robot-e2e-results
+          path: |
+            tests/e2e/results/output.xml
+            tests/e2e/results/log.html
+            tests/e2e/results/report.html
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cx } from './lib/utils';
 import LoginPage from './pages/LoginPage';
 import SupportPage from './pages/SupportPage';
 import PayrollPage from './pages/PayrollPage';
+import { supabase } from './lib/supabase';
+import logo from './assets/invertedLogo.svg';
 
 // Shared SVG icons for the shell layout
 const Icons = {
@@ -36,16 +38,36 @@ const NAV = [
 ];
 
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [session, setSession] = useState(null);
+  const [userMetadata, setUserMetadata] = useState(null);
   const [route, setRoute] = useState('support');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-
-  if (!user) {
-    return <LoginPage onLogin={setUser} />;
+  const SessionLogin = () => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUserMetadata(session?.user?.user_metadata);
+    });
+  };
+  const SessionLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) return;
+    setSession(null);
+    setUserMetadata(null);
+  };
+  useEffect(() => {
+    SessionLogin();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((e, session) => {
+      setSession(session);
+      setUserMetadata(session?.user?.user_metadata);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+  
+  if (!session) {
+    return <LoginPage onLogin={SessionLogin} />;
   }
 
   const page = NAV.find((n) => n.id === route);
-
   return (
       <div className="flex min-h-screen bg-gray-100">
         {/* Sidebar */}
@@ -53,9 +75,9 @@ export default function App() {
             <aside className="sticky top-0 flex h-screen w-72 shrink-0 flex-col bg-ink text-cream border-r border-ink/10 transition-all duration-300">
 
               {/* Logo Area */}
-              <div className="flex h-[72px] shrink-0 items-center px-6 border-b border-cream/10">
-                <div className="flex items-center gap-3">
-                  <p className="text-xl font-bold text-brand">Manong</p>
+              <div className="flex h-[72px] shrink-0 items-center px-0 border-b border-cream/10">
+                <div className="flex items-left gap-3 justify-start">
+                  <img src={logo} alt="Logo" className="h-48 w-48" />
                 </div>
               </div>
 
@@ -86,12 +108,12 @@ export default function App() {
               {/* Sidebar Footer: User Info & Logout */}
               <div className="border-t border-cream/10 p-4">
                 <div className="mb-4 px-2">
-                  <p className="text-sm font-medium text-cream">{user}</p>
+                  <p className="text-sm font-medium text-cream">{userMetadata.employee_name}</p>
                   {/* Placeholder for time of logged in */}
                   <p className="mt-0.5 text-xs text-cream/40">Last login: Today, 08:30 AM</p>
                 </div>
                 <button
-                    onClick={() => setUser(null)}
+                    onClick={SessionLogout}
                     className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-cream/80 transition-colors hover:bg-red-500/10 hover:text-red-400"
                 >
               <span className="text-red-400/80">
@@ -123,14 +145,14 @@ export default function App() {
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-3 border-l border-ink/20 pl-6">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/40 text-ink font-bold ring-1 ring-ink/10">
-                  {user.charAt(0).toUpperCase()}
+                  {userMetadata.employee_name.charAt(0).toUpperCase()}
                 </div>
                 <div className="hidden flex-col md:flex">
-                  <span className="text-sm font-semibold text-ink">{user}</span>
+                  <span className="text-sm font-semibold text-ink">{userMetadata.employee_name}</span>
                   <span className="text-xs font-medium text-ink/70">Administrator</span>
                 </div>
                 <button
-                    onClick={() => setUser(null)}
+                    onClick={SessionLogout}
                     className="ml-3 rounded-lg border border-red-800/20 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
                 >
                   Logout
